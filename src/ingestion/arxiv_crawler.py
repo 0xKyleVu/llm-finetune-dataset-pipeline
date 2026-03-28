@@ -93,7 +93,6 @@ if __name__ == "__main__":
     setup_directories(base_dir=test_base_dir)
     
     # Danh sách cấu hình các chủ đề theo yêu cầu đề bài
-    # ArXiv không có sẵn tag "Quân sự", nên ta dùng từ khoá (Keyword) thay cho Category
     topic_queries = [
         "cat:cs.AI",                    # 1. Trí tuệ nhân tạo (AI)
         "cat:q-fin.GN",                 # 2. Tài chính (Quantitative Finance)
@@ -110,6 +109,6 @@ if __name__ == "__main__":
             download_dir=f"{test_base_dir}/raw/pdf",
             metadata_dir=f"{test_base_dir}/raw/metadata"
         )
-        # Lưu ý DE: Bắt buộc phải có khoảng nghỉ giữa nhiều request lớn để không bị server block IP
+        # Lưu ý: Bắt buộc phải có khoảng nghỉ giữa nhiều request lớn để không bị server block IP
         logging.info("Tạm nghỉ 5 giây để tránh lỗi Rate Limit (HTTP 429) trước khi lấy mảng tiếp theo...")
         time.sleep(5)
