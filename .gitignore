@@ -1,0 +1,32 @@
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Môi trường ảo (Virtual Environments)
+.venv/
+venv/
+env/
+ENV/
+
+# Dữ liệu Data Engineering (Không bao giờ Push Data lên git)
+data/
+test_data/
+*.pdf
+*.json
+*.md
+*.duckdb
+*.parquet
+
+# Cấu hình IDE / Môi trường cá nhân
+.vscode/
+.idea/
+.gemini/
+
+# File kế hoạch làm việc Local (Theo yêu cầu)
+implementation_plan.md
+task.md
+Walkthrough.md
+
+context/
+*.docx

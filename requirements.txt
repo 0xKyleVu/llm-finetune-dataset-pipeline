@@ -1,0 +1,28 @@
+# --- INGESTION LAYER ---
+arxiv==2.1.0
+
+# --- PROCESSING / TRANSFORMATION LAYER (PDF to Text) ---
+docling
+docling-core
+
+# --- PARSING & CHUNKING LAYER ---
+langchain
+langchain-community
+langchain-text-splitters
+
+# --- CLEANING LAYER ---
+ftfy
+regex
+
+# --- CATEGORIZATION & LLM AGENT LAYER ---
+ollama
+transformers
+torch
+accelerate
+
+# --- DATA STORE & OUTPUT LAYER ---
+pandas
+duckdb
+
+# --- ORCHESTRATION LAYER ---
+prefect
