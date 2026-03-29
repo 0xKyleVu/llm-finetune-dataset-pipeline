@@ -60,10 +60,10 @@ def parse_pdfs_to_markdown(input_dir: str, output_dir: str):
             with open(output_md_path, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
                 
-            logging.info(f"✅ Bóc tách thành công: Lưu tại {output_md_path}")
+            logging.info(f"Bóc tách thành công: Lưu tại {output_md_path}")
             
         except Exception as e:
-            logging.error(f"❌ Lỗi khi bóc tách file {file_name}: {e}")
+            logging.error(f"Lỗi khi bóc tách file {file_name}: {e}")
             
 if __name__ == "__main__":
     # Đang chạy mô phỏng thư mục test_data
