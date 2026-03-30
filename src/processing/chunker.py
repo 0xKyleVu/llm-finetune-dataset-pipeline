@@ -4,7 +4,7 @@ import json
 import logging
 from typing import List, Dict
 
-# Import công cụ chẻ văn bản của Langchain
+# Import Langchain
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 # Cấu hình logging
@@ -21,7 +21,6 @@ def chunk_markdown_files(input_dir: str, output_dir: str):
     Sử dụng Langchain để băm nhỏ các file Markdown dựa trên Thẻ tiêu đề (Header).
     """
     # 1. Khai báo quy tắc chẻ văn bản theo Header của Markdown
-    # Lý do: Ta muốn file bị chẻ ở đúng chỗ sang chương mới/mục mới, tránh việc chẻ dở dang chia đôi 1 câu.
     headers_to_split_on = [
         ("#", "Header 1"),
         ("##", "Header 2"),
@@ -29,8 +28,8 @@ def chunk_markdown_files(input_dir: str, output_dir: str):
     ]
     markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
     
-    # 2. Khai báo quy tắc dự phòng: Chẻ theo ký tự (Nếu có 1 mục quá nhây, vượt quá giới hạn từ)
-    # chunk_size=1000 ký tự (~150 từ), overlap=100 để các đoạn con có dính vào nhau 1 chút, tránh mất ngữ cảnh.
+    # 2. Khai báo quy tắc dự phòng: Chẻ theo ký tự
+    # chunk_size=1000 ký tự (~150 từ), overlap=100 để các đoạn con giữ context.
     char_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 
     md_files = glob.glob(os.path.join(input_dir, '*.md'))
@@ -55,13 +54,13 @@ def chunk_markdown_files(input_dir: str, output_dir: str):
             with open(md_path, 'r', encoding='utf-8') as f:
                 markdown_text = f.read()
 
-            # Bước A: Chẻ theo Logic của báo khoa học (Abstract, Introduction, Conclusion,...)
+            # Bước A: Chunk theo Logic của báo khoa học (Abstract, Introduction, Conclusion,...)
             md_header_splits = markdown_splitter.split_text(markdown_text)
             
-            # Bước B: Ép nhỏ lại các đoạn lỡ bị dài quá 1000 ký tự
+            # Bước B: Ép nhỏ lại các đoạn bị dài quá 1000 ký tự
             final_chunks = char_splitter.split_documents(md_header_splits)
             
-            # Bước C: Đóng gói toàn bộ nùi văn bản vừa băm sang định dạng dễ đọc (List các Dictionary)
+            # Bước C: Đóng gói toàn bộ văn bản vừa chunk sang định dạng dễ đọc (List các Dictionary)
             processed_chunks = []
             for i, chunk in enumerate(final_chunks):
                 processed_chunks.append({
@@ -89,4 +88,4 @@ if __name__ == "__main__":
     
     logging.info("\n=========================================\nBẮT ĐẦU LAYER CHUNKING (MARKDOWN -> CHUNKS)\n=========================================")
     chunk_markdown_files(input_dir=input_md_dir, output_dir=output_chunk_dir)
-    logging.info("Hoàn tất tiến trình Parsing & Chunking!")
+    logging.info("Hoàn tất Chunking!")

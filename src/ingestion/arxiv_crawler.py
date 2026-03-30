@@ -6,7 +6,7 @@ import ssl
 import time
 from typing import List, Dict
 
-# Bypass SSL Verification cho urllib (sửa lỗi CERTIFICATE_VERIFY_FAILED trên Windows)
+# Bypass SSL Verification cho urllib
 ssl._create_default_https_context = ssl._create_unverified_context
 
 # Cấu hình logging
@@ -74,7 +74,7 @@ def crawl_arxiv_papers(query: str, max_results: int = 10, download_dir: str = 'd
         else:
             logging.info(f"File PDF đã tồn tại, bỏ qua tải: {pdf_path}")
             
-    # Xóa ký tự gạch chéo/nháy trong query để làm tên file hợp lệ (nếu cần)
+    # Xóa ký tự gạch chéo/nháy trong query để làm tên file hợp lệ
     safe_query_name = query.replace(':', '_').replace(' ', '_')
     metadata_path = os.path.join(metadata_dir, f"metadata_{safe_query_name}_{max_results}.json")
     
@@ -82,11 +82,10 @@ def crawl_arxiv_papers(query: str, max_results: int = 10, download_dir: str = 'd
         json.dump(papers_metadata, f, ensure_ascii=False, indent=2)
         
     logging.info(f"Đã lưu metadata của {len(papers_metadata)} bài báo tại {metadata_path}")
-    logging.info("Hoàn tất tiến trình Ingestion!")
+    logging.info("Hoàn thành Ingestion!")
     
 if __name__ == "__main__":
-    # Đổi thư mục lưu thành 'test_data' thay vì 'data' như mặc định.
-    # Việc này giúp việc chạy thử hoàn toàn cách ly, bạn có thể xoá đi sau khi xem xong.
+    # Test_Data
     test_base_dir = 'test_data'
     
     # Bước 1: Khởi tạo/kiểm tra cấu trúc thư mục test
@@ -109,6 +108,6 @@ if __name__ == "__main__":
             download_dir=f"{test_base_dir}/raw/pdf",
             metadata_dir=f"{test_base_dir}/raw/metadata"
         )
-        # Lưu ý: Bắt buộc phải có khoảng nghỉ giữa nhiều request lớn để không bị server block IP
-        logging.info("Tạm nghỉ 5 giây để tránh lỗi Rate Limit (HTTP 429) trước khi lấy mảng tiếp theo...")
+        # Lưu ý: Bắt buộc phải có khoảng nghỉ giữa nhiều request lớn để không bị block IP
+        logging.info("Nghỉ 5 giây để tránh lỗi Rate Limit (HTTP 429) trước khi lấy mảng tiếp theo...")
         time.sleep(5)

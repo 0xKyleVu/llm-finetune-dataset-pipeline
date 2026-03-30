@@ -4,7 +4,7 @@ import json
 import logging
 import re
 
-# ftfy: fixes text for you
+# Import ftfy: fixes text for you
 import ftfy
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,12 +25,12 @@ def clean_text(text: str) -> str:
     # 1. Fix lỗi Unicode 
     text = ftfy.fix_text(text)
     
-    # 2. Xóa Citation không cần thiết cho mô hình ngôn ngữ
+    # 2. Xóa Citation không cần thiết
     # Ví dụ: loại bỏ [12], [3, 4], [1-5]
     text = re.sub(r'\[\d+(?:,\s*\d+)*\]', '', text)
     text = re.sub(r'\[\d+(?:-\d+)*\]', '', text)
     
-    # 3. Xóa các đường link web dài dòng làm loãng từ vựng của LLM
+    # 3. Xóa url web dài dòng
     text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
     
     # 4. Dọn whitespace
@@ -41,20 +41,20 @@ def clean_text(text: str) -> str:
 
 def clean_chunks_layer(input_dir: str, output_dir: str):
     """
-    Đọc các file chunk đã băm, làm sạch từng khối và xuất ra thư mục mới.
+    Đọc các file chunk, làm sạch từng khối và xuất ra thư mục mới.
     """
     chunk_files = glob.glob(os.path.join(input_dir, '*.json'))
     if not chunk_files:
         logging.warning(f"Không tìm thấy khối dữ liệu nào trong {input_dir}")
         return
 
-    logging.info(f"Phát hiện {len(chunk_files)} file Chunks. Khởi động máy giặt văn bản (Cleaner)...")
+    logging.info(f"Phát hiện {len(chunk_files)} file Chunks. Khởi động Cleaner...")
 
     for file_path in chunk_files:
         file_name = os.path.basename(file_path)
         output_file_path = os.path.join(output_dir, file_name)
         
-        # Idempotent: Bỏ qua nếu đã làm sạch
+        # Idempotent
         if os.path.exists(output_file_path):
             logging.info(f"File đã được làm sạch trước đó, bỏ qua: {file_name}")
             continue
@@ -94,4 +94,4 @@ if __name__ == "__main__":
     
     logging.info("\n=========================================\nBẮT ĐẦU LAYER LÀM SẠCH (CLEANING)\n=========================================")
     clean_chunks_layer(input_dir=input_chunks_dir, output_dir=output_cleaned_dir)
-    logging.info("Hoàn tất tiến trình Cleaning!")
+    logging.info("Hoàn tất Cleaning!")

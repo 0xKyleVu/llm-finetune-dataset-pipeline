@@ -8,7 +8,7 @@ import glob
 import logging
 from typing import List
 
-# Import Docling (Công cụ Extract PDF SOTA hiện nay của IBM)
+# Import Docling
 from docling.document_converter import DocumentConverter
 
 # Cấu hình logging
@@ -43,20 +43,20 @@ def parse_pdfs_to_markdown(input_dir: str, output_dir: str):
         base_name = os.path.splitext(file_name)[0]
         output_md_path = os.path.join(output_dir, f"{base_name}.md")
         
-        # Lược bỏ nếu đã parse thành công trước đó (Idempotent)
+        # Idempotent
         if os.path.exists(output_md_path):
             logging.info(f"File markdown đã tồn tại, bỏ qua parse: {file_name}")
             continue
             
         logging.info(f"Đang phân tích cấu trúc & Bóc tách: {file_name}...")
         try:
-            # Sức mạnh cốt lõi: convert() sẽ tự động nhận diện đoạn văn, 2 cột dọc, title, table...
+            # convert() sẽ tự động nhận diện đoạn văn, 2 cột dọc, title, table...
             result = converter.convert(pdf_path)
             
-            # Xuất kết quả ra chuẩn text Markdown
+            # Xuất kết quả ra Markdown
             markdown_content = result.document.export_to_markdown()
             
-            # Chép Text ra file
+            # Copy Text ra file
             with open(output_md_path, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
                 
@@ -66,7 +66,7 @@ def parse_pdfs_to_markdown(input_dir: str, output_dir: str):
             logging.error(f"Lỗi khi bóc tách file {file_name}: {e}")
             
 if __name__ == "__main__":
-    # Đang chạy mô phỏng thư mục test_data
+    # Chạy mô phỏng thư mục test_data
     test_base_dir = '../test_data' if not os.path.exists('test_data') else 'test_data'
     
     raw_pdf_dir = os.path.join(test_base_dir, 'raw', 'pdf')
@@ -74,4 +74,4 @@ if __name__ == "__main__":
     
     logging.info("\n=========================================\nBẮT ĐẦU LAYER PROCESSING (PDF -> MARKDOWN)\n=========================================")
     parse_pdfs_to_markdown(input_dir=raw_pdf_dir, output_dir=processed_md_dir)
-    logging.info("Hoàn tất tiến trình Parsing!")
+    logging.info("Hoàn tất Parsing!")
