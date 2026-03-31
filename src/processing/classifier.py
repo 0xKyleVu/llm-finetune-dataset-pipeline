@@ -21,18 +21,24 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
         logging.warning(f"Không tìm thấy file nào trong {input_dir}")
         return
 
-    # Danh sách 10 thẻ hạng mục chuẩn
+    # Danh sách thẻ hạng mục (Root concepts - Tránh trùng lặp ngữ nghĩa)
     candidate_labels = [
-        "Artificial Intelligence",
-        "Mathematics",
-        "Finance",
-        "Military",
-        "Hardware",
-        "Physics",
-        "Healthcare",
-        "Education",
-        "Software Engineering",
-        "Metadata and References"
+        "artificial intelligence",
+        "machine learning",
+        "cryptography",
+        "cryptocurrency",
+        "blockchain",
+        "cybersecurity",
+        "information theory",
+        "systems engineering",
+        "mathematics",
+        "healthcare",
+        "education",
+        "quantitative finance",
+        "computer networks",
+        "signal processing",
+        "military",
+        "metadata and references"
     ]
 
     logging.info("Đang khởi tạo AI Pipeline (HuggingFace Zero-shot)...")
@@ -79,6 +85,11 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
                 # Cắt lấy Kết quả Top 1
                 top_label = result['labels'][0]
                 top_score = result['scores'][0]
+                
+                # Cơ chế lọc rễ: Bất kỳ chunk nào có điểm cao nhất mà vẫn < 0.3 (Độ tự tin cực thấp)
+                # thì ép buộc (auto-assignment) ném vào rổ "metadata and references" để loại bỏ.
+                if top_score < 0.3:
+                    top_label = "metadata and references"
                 
                 chunk["category"] = top_label
                 chunk["confidence_score"] = round(top_score, 4)

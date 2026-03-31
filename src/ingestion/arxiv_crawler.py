@@ -93,10 +93,12 @@ if __name__ == "__main__":
     
     # Danh sách cấu hình các chủ đề theo yêu cầu đề bài
     topic_queries = [
-        "cat:cs.AI",                    # 1. Trí tuệ nhân tạo (AI)
-        "cat:q-fin.GN",                 # 2. Tài chính (Quantitative Finance)
-        "cat:eess.SY",                  # 3. Cơ khí/Điện tử/Hệ thống (Systems and Control)
-        "all:military OR all:defense"   # 4. Quân sự / Quốc phòng (Keyword search)
+        "cat:cs.AI", "cat:cs.LG",           # 1. Trí tuệ nhân tạo & Machine Learning
+        "cat:cs.CR",                        # 2. Ngành Bảo mật & Mật mã học
+        "cat:cs.IT", "cat:cs.NI",           # 3. Mạng Internet & Lý thuyết thông tin
+        "cat:eess.SY", "cat:eess.SP",       # 4. Điện tử & Kỹ thuật hệ thống
+        "cat:q-fin.GN", "cat:q-fin.CP",     # 5. Tài chính định lượng
+        "all:military OR all:defense"       # 6. Quân sự / Quốc phòng (Giữ OR vì đây là tìm kiếm từ khóa đồng nghĩa)
     ]
     
     # Quét qua từng chủ đề vòng lặp
