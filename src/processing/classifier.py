@@ -21,7 +21,7 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
         logging.warning(f"Không tìm thấy file nào trong {input_dir}")
         return
 
-    # Danh sách thẻ hạng mục (Root concepts - Tránh trùng lặp ngữ nghĩa)
+    # Candidate Labels cho Zero-shot
     candidate_labels = [
         "artificial intelligence",
         "machine learning",
@@ -44,24 +44,23 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
     logging.info("Đang khởi tạo AI Pipeline (HuggingFace Zero-shot)...")
     logging.info("Mô hình được chọn: 'facebook/bart-large-mnli'")
     
-    # Sử dụng bart-large-mnli
+    logging.info("Đang khởi tạo mô hình Zero-shot: facebook/bart-large-mnli")
     classifier = pipeline(
         "zero-shot-classification", 
         model="facebook/bart-large-mnli",
-        device=0 # Chạy bằng GPU
+        device=0
     )
-    logging.info("Khởi tạo AI thành công!")
+    logging.info("Khởi tạo mô hình thành công.")
 
     for file_path in chunk_files:
         file_name = os.path.basename(file_path)
         output_file_path = os.path.join(output_dir, file_name)
         
-        # Idempotent
         if os.path.exists(output_file_path):
-            logging.info(f"File đã được phân loại trước đó, bỏ qua: {file_name}")
+            logging.info(f"Bỏ qua file đã xử lý: {file_name}")
             continue
 
-        logging.info(f"\n[TIẾN TRÌNH] Đang phân loại file: {file_name}")
+        logging.info(f"Đang xử lý: {file_name}")
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 chunks = json.load(f)
@@ -72,50 +71,51 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
             for i, chunk in enumerate(chunks):
                 content = chunk.get("content", "")
                 if not content or len(content) < 50:
-                    continue # Bỏ qua rác
+                    continue
                 
-                # Gọi AI đọc và chấm điểm đa nhãn độc lập (Multi-label)
                 result = classifier(
                     content, 
                     candidate_labels,
                     multi_label=True,
-                    hypothesis_template="The topic of this text is {}."
+                    hypothesis_template="This text is about {}."
                 )
                 
-                # Cắt lấy Kết quả Top 1
                 top_label = result['labels'][0]
                 top_score = result['scores'][0]
                 
-                # Cơ chế lọc rễ: Bất kỳ chunk nào có điểm cao nhất mà vẫn < 0.3 (Độ tự tin cực thấp)
-                # thì ép buộc (auto-assignment) ném vào rổ "metadata and references" để loại bỏ.
-                if top_score < 0.3:
+                # Phân tầng chất lượng dữ liệu
+                # Ngưỡng tối thiểu 0.45 để giảm nhiễu (Dưới ngưỡng này coi là Metadata/Rác)
+                if top_score < 0.45:
                     top_label = "metadata and references"
+                    quality_tier = "Low"
+                elif top_score >= 0.7:
+                    quality_tier = "High"
+                else:
+                    quality_tier = "Medium"
                 
                 chunk["category"] = top_label
                 chunk["confidence_score"] = round(top_score, 4)
+                chunk["quality_tier"] = quality_tier
                 
                 classified_chunks.append(chunk)
                 
-                # Log tiến độ để user khỏi sốt ruột
-                if (i + 1) % 5 == 0 or (i + 1) == total_chunks:
-                    logging.info(f"  -> Đã gán nhãn {i + 1}/{total_chunks} chunks. Gần nhất: [{top_label}] ({top_score*100:.1f}%)")
+                if (i + 1) % 10 == 0 or (i + 1) == total_chunks:
+                    logging.info(f" Tiến độ: {i + 1}/{total_chunks} chunks | [{top_label}] ({top_score*100:.1f}%)")
 
-            # Ghi ra file JSON chuẩn
+            # Ghi ra file JSON
             with open(output_file_path, 'w', encoding='utf-8') as f:
                 json.dump(classified_chunks, f, ensure_ascii=False, indent=2)
 
-            logging.info(f"Hoàn tất file {file_name} với {len(classified_chunks)} chunks có nhãn. Lưu tại: {output_file_path}")
+            logging.info(f"Hoàn tất: {file_name} ({len(classified_chunks)} chunks).")
 
         except Exception as e:
-            logging.error(f"Lỗi khi xử lý file {file_name}: {e}")
+            logging.error(f"Lỗi xử lý file {file_name}: {e}")
 
 if __name__ == "__main__":
-    test_base_dir = '../test_data' if not os.path.exists('test_data') else 'test_data'
-    
-    # Lấy đầu vào từ output của cleaner
+    test_base_dir = 'test_data'
     input_cleaned_dir = os.path.join(test_base_dir, 'cleaned', 'chunks')
     output_classified_dir = setup_classified_directories(test_base_dir)
     
-    logging.info("\n=========================================\nBẮT ĐẦU LAYER PHÂN LOẠI (CLASSIFICATION)\n=========================================")
+    logging.info("BẮT ĐẦU LAYER PHÂN LOẠI (CLASSIFICATION)")
     classify_chunks_layer(input_dir=input_cleaned_dir, output_dir=output_classified_dir)
-    logging.info("Layer Phân loại kết thúc thành công!")
+    logging.info("Layer Phân loại kết thúc.")

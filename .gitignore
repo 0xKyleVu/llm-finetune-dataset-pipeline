@@ -3,27 +3,33 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Môi trường ảo (Virtual Environments)
+# Virtual Environments
 .venv/
 venv/
 env/
 ENV/
 
-# Dữ liệu Data Engineering (Không bao giờ Push Data lên git)
+# Data
 data/
 test_data/
+!test_data/*.jsonl
 *.pdf
 *.json
-*.md
 *.duckdb
 *.parquet
 
-# Cấu hình IDE / Môi trường cá nhân
+# Script tạm thời 
+tmp_*.py
+
+# Storage config có credentials
+src/storage/minio_sync.py
+
+# Cấu hình IDE 
 .vscode/
 .idea/
 .gemini/
 
-# File kế hoạch làm việc Local (Theo yêu cầu)
+# File kế hoạch làm việc Local
 implementation_plan.md
 task.md
 Walkthrough.md
