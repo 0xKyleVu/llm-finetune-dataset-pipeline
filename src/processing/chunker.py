@@ -20,7 +20,7 @@ def chunk_markdown_files(input_dir: str, output_dir: str):
     """
     Sử dụng Langchain để băm nhỏ các file Markdown dựa trên Thẻ tiêu đề (Header).
     """
-    # 1. Khai báo quy tắc chẻ văn bản theo Header của Markdown
+    # 1. Khai báo quy tắc chunking theo Header của Markdown
     headers_to_split_on = [
         ("#", "Header 1"),
         ("##", "Header 2"),
@@ -54,13 +54,31 @@ def chunk_markdown_files(input_dir: str, output_dir: str):
             with open(md_path, 'r', encoding='utf-8') as f:
                 markdown_text = f.read()
 
-            # Bước A: Chunk theo Logic của báo khoa học (Abstract, Introduction, Conclusion,...)
+            # Bước 1: Chunk theo Logic của báo khoa học (Abstract, Introduction, Conclusion,...)
             md_header_splits = markdown_splitter.split_text(markdown_text)
-            
-            # Bước B: Ép nhỏ lại các đoạn bị dài quá 1000 ký tự
+
+            # Lọc section rác upstream (References, Bibliography,...)
+            NOISE_HEADERS = {
+                "references", "bibliography", "acknowledgments",
+                "acknowledgements", "appendix", "author contributions",
+                "competing interests", "funding", "disclosure"
+            }
+            before_count = len(md_header_splits)
+            md_header_splits = [
+                doc for doc in md_header_splits
+                if not any(
+                    doc.metadata.get(h, "").strip().lower() in NOISE_HEADERS
+                    for h in ("Header 1", "Header 2", "Header 3")
+                )
+            ]
+            filtered_count = before_count - len(md_header_splits)
+            if filtered_count > 0:
+                logging.info(f"  Đã lọc {filtered_count} section rác (References/Bibliography/...)")
+
+            # Bước 2: Ép nhỏ lại các đoạn bị dài quá 1000 ký tự
             final_chunks = char_splitter.split_documents(md_header_splits)
             
-            # Bước C: Đóng gói toàn bộ văn bản vừa chunk sang định dạng dễ đọc (List các Dictionary)
+            # Bước 3: Đóng gói toàn bộ văn bản vừa chunk sang định dạng dễ đọc (List các Dictionary)
             processed_chunks = []
             for i, chunk in enumerate(final_chunks):
                 processed_chunks.append({

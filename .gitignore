@@ -18,7 +18,7 @@ test_data/
 *.duckdb
 *.parquet
 
-# Script tạm thời 
+# Script tạm thời
 tmp_*.py
 
 # Storage config có credentials
@@ -29,7 +29,7 @@ src/storage/minio_sync.py
 .idea/
 .gemini/
 
-# File kế hoạch làm việc Local
+# File local
 implementation_plan.md
 task.md
 Walkthrough.md

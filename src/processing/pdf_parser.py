@@ -21,9 +21,10 @@ def setup_processed_directories(base_dir: str = 'test_data'):
     logging.info(f"Đã kiểm tra cấu trúc thư mục đầu ra: {processed_dir}")
     return processed_dir
 
-def parse_pdfs_to_markdown(input_dir: str, output_dir: str):
+def parse_pdfs_to_markdown(input_dir: str, output_dir: str, converter=None):
     """
     Quét toàn bộ file PDF trong thư mục và nhả ra file Markdown.
+    Converter được truyền vào hoặc lazy-init 1 lần duy nhất.
     """
     # Tìm kiếm tất cả file PDF
     pdf_files = glob.glob(os.path.join(input_dir, '*.pdf'))
@@ -34,8 +35,9 @@ def parse_pdfs_to_markdown(input_dir: str, output_dir: str):
         
     logging.info(f"Phát hiện tổng cộng {len(pdf_files)} file PDF. Khởi động AI Docling Core...")
     
-    # Khởi tạo cỗ máy chuyển đổi AI của Docling
-    converter = DocumentConverter()
+    # Lazy init: chỉ load model 1 lần
+    if converter is None:
+        converter = DocumentConverter()
     
     # Duyệt và chuyển đổi từng file một
     for pdf_path in pdf_files:

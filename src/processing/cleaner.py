@@ -3,6 +3,7 @@ import glob
 import json
 import logging
 import re
+import hashlib
 
 # Import ftfy: fixes text for you
 import ftfy
@@ -30,8 +31,8 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\[\d+(?:,\s*\d+)*\]', '', text)
     text = re.sub(r'\[\d+(?:-\d+)*\]', '', text)
     
-    # 3. Xóa url web dài dòng
-    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+    # 3. Xóa URL web dài dòng (giữ lại DOI vì là metadata quan trọng)
+    text = re.sub(r'https?://(?!doi\.org)(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
     
     # 4. Dọn whitespace
     text = re.sub(r'\n{3,}', '\n\n', text) # Nén 3 dòng trống liên tiếp thành 2 dòng
@@ -65,6 +66,9 @@ def clean_chunks_layer(input_dir: str, output_dir: str):
                 chunks = json.load(f)
             
             cleaned_chunks = []
+            seen_hashes = set()  # Dedup bằng content hash
+            dup_count = 0
+            
             for chunk in chunks:
                 original_content = chunk.get("content", "")
                 sanitized_content = clean_text(original_content)
@@ -72,11 +76,21 @@ def clean_chunks_layer(input_dir: str, output_dir: str):
                 # Bỏ qua các khối rỗng sau khi đã làm sạch
                 if not sanitized_content:
                     continue
+                
+                # Dedup: bỏ qua chunk có nội dung trùng lặp
+                content_hash = hashlib.md5(sanitized_content.encode()).hexdigest()
+                if content_hash in seen_hashes:
+                    dup_count += 1
+                    continue
+                seen_hashes.add(content_hash)
                     
                 # Ghi đè chữ sạch vào nội dung
                 chunk["content"] = sanitized_content
                 chunk["char_length"] = len(sanitized_content)
                 cleaned_chunks.append(chunk)
+            
+            if dup_count > 0:
+                logging.info(f"  Đã loại {dup_count} chunk trùng lặp.")
 
             with open(output_file_path, 'w', encoding='utf-8') as f:
                 json.dump(cleaned_chunks, f, ensure_ascii=False, indent=2)

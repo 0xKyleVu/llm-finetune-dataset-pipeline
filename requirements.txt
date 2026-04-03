@@ -1,5 +1,9 @@
 # --- INGESTION LAYER ---
 arxiv==2.1.0
+certifi
+
+# --- STORAGE LAYER (ON-PREM) ---
+minio
 
 # --- PROCESSING / TRANSFORMATION LAYER (PDF to Text) ---
 docling
@@ -10,19 +14,16 @@ langchain
 langchain-community
 langchain-text-splitters
 
-# --- CLEANING LAYER ---
+# --- CLEANING & DEDUP LAYER ---
 ftfy
-regex
 
 # --- CATEGORIZATION & LLM AGENT LAYER ---
 ollama
 transformers
 torch
 accelerate
+pydantic
 
 # --- DATA STORE & OUTPUT LAYER ---
 pandas
 duckdb
-
-# --- ORCHESTRATION LAYER ---
-prefect

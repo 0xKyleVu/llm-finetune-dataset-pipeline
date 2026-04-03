@@ -6,8 +6,13 @@ import ssl
 import time
 from typing import List, Dict
 
-# Bypass SSL Verification cho urllib
-ssl._create_default_https_context = ssl._create_unverified_context
+# SSL: Ưu tiên dùng certifi nếu có, chỉ fallback unverified khi không cài được
+try:
+    import certifi
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+except ImportError:
+    ssl._create_default_https_context = ssl._create_unverified_context
+    logging.warning("certifi not found — SSL verification disabled. Run: pip install certifi")
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -66,7 +71,13 @@ def crawl_arxiv_papers(query: str, max_results: int = 10, download_dir: str = 'd
         }
         papers_metadata.append(metadata)
         
-        # 2. Tải file PDF
+        # 2. Lưu metadata theo từng paper (1 file/paper → dễ JOIN downstream)
+        per_paper_path = os.path.join(metadata_dir, f"{paper_id}.json")
+        if not os.path.exists(per_paper_path):
+            with open(per_paper_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
+        
+        # 3. Tải file PDF
         pdf_path = os.path.join(download_dir, f"{paper_id}.pdf")
         if not os.path.exists(pdf_path):
             logging.info(f"Đang tải PDF: {pdf_path}")
@@ -74,24 +85,17 @@ def crawl_arxiv_papers(query: str, max_results: int = 10, download_dir: str = 'd
         else:
             logging.info(f"File PDF đã tồn tại, bỏ qua tải: {pdf_path}")
             
-    # Xóa ký tự gạch chéo/nháy trong query để làm tên file hợp lệ
-    safe_query_name = query.replace(':', '_').replace(' ', '_')
-    metadata_path = os.path.join(metadata_dir, f"metadata_{safe_query_name}_{max_results}.json")
-    
-    with open(metadata_path, 'w', encoding='utf-8') as f:
-        json.dump(papers_metadata, f, ensure_ascii=False, indent=2)
-        
-    logging.info(f"Đã lưu metadata của {len(papers_metadata)} bài báo tại {metadata_path}")
+    logging.info(f"Đã lưu metadata của {len(papers_metadata)} bài báo.")
     logging.info("Hoàn thành Ingestion!")
     
 if __name__ == "__main__":
     # Test_Data
     test_base_dir = 'test_data'
     
-    # Bước 1: Khởi tạo/kiểm tra cấu trúc thư mục test
+    # Khởi tạo/kiểm tra cấu trúc thư mục test
     setup_directories(base_dir=test_base_dir)
     
-    # Danh sách cấu hình các chủ đề theo yêu cầu đề bài
+    # Danh sách cấu hình các chủ đề
     topic_queries = [
         "cat:cs.AI", "cat:cs.LG",           # 1. Trí tuệ nhân tạo & Machine Learning
         "cat:cs.CR",                        # 2. Ngành Bảo mật & Mật mã học
@@ -110,6 +114,6 @@ if __name__ == "__main__":
             download_dir=f"{test_base_dir}/raw/pdf",
             metadata_dir=f"{test_base_dir}/raw/metadata"
         )
-        # Lưu ý: Bắt buộc phải có khoảng nghỉ giữa nhiều request lớn để không bị block IP
+        # Lưu ý: Khoảng nghỉ 5s giữa nhiều request lớn để không bị block IP
         logging.info("Nghỉ 5 giây để tránh lỗi Rate Limit (HTTP 429) trước khi lấy mảng tiếp theo...")
         time.sleep(5)
