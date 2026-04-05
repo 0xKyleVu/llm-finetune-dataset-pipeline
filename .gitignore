@@ -30,6 +30,8 @@ src/storage/minio_sync.py
 .gemini/
 
 # File local
+.env
+src/pipeline.py
 implementation_plan.md
 task.md
 Walkthrough.md

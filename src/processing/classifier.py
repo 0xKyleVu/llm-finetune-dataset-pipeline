@@ -1,27 +1,70 @@
 import os
-import glob
 import json
 import logging
+import io
+from minio import Minio
+from minio.error import S3Error
 from transformers import pipeline
 
+# Cấu hình Global Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def setup_classified_directories(base_dir: str = 'test_data'):
-    """Tạo thư mục cho dữ liệu đã được gán nhãn (Classified Data)"""
-    classified_dir = os.path.join(base_dir, 'classified', 'chunks')
-    os.makedirs(classified_dir, exist_ok=True)
-    return classified_dir
+# --- CLOUD CONFIGURATION ---
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
-def classify_chunks_layer(input_dir: str, output_dir: str):
+SOURCE_BUCKET = "cleaned-data"
+DEST_BUCKET = "classified-data"
+
+def get_minio_client() -> Minio:
+    """Khởi tạo kết nối đến MinIO Data Lake."""
+    return Minio(
+        MINIO_ENDPOINT,
+        access_key=MINIO_ACCESS_KEY,
+        secret_key=MINIO_SECRET_KEY,
+        secure=MINIO_SECURE
+    )
+
+def setup_minio_buckets(client: Minio):
+    """Đảm bảo Bucket đích tồn tại trên MinIO."""
+    try:
+        if not client.bucket_exists(DEST_BUCKET):
+            client.make_bucket(DEST_BUCKET)
+            logging.info(f"[Initialization] Created destination bucket: s3://{DEST_BUCKET}")
+        else:
+            logging.info(f"[Initialization] Destination bucket ready: s3://{DEST_BUCKET}")
+    except S3Error as e:
+        logging.error(f"[Initialization] MinIO Server error: {e}")
+        raise
+
+def is_object_exists(client: Minio, bucket_name: str, object_name: str) -> bool:
+    """Kiểm tra sự tồn tại của object trên MinIO để đảm bảo tính Idempotency."""
+    try:
+        client.stat_object(bucket_name, object_name)
+        return True
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            return False
+        raise
+
+def classify_chunks_layer(client: Minio):
     """
-    Sử dụng Zero-shot Classification để phân loại nội dung các chunks.
+    Kích hoạt phân loại phân luồng Zero-shot semantic lấy JSON block mảng từ MinIO.
+    Sau khi phân phối dán nhãn, output sẽ auto upload đổ về đích.
     """
-    chunk_files = glob.glob(os.path.join(input_dir, '*.json'))
-    if not chunk_files:
-        logging.warning(f"Không tìm thấy file nào trong {input_dir}")
+    try:
+        chunk_objects = list(client.list_objects(SOURCE_BUCKET, prefix="chunks/"))
+    except S3Error as e:
+        logging.error(f"[Classifier] Failed to list objects in '{SOURCE_BUCKET}': {e}")
         return
 
-    # Candidate Labels cho Zero-shot
+    if not chunk_objects:
+        logging.warning(f"[Classifier] No JSON array files found in s3://{SOURCE_BUCKET}/chunks/")
+        return
+
+    # Khai báo các nhãn Candidate Labels cho quá trình Zero-shot inference
     candidate_labels = [
         "artificial intelligence",
         "machine learning",
@@ -41,40 +84,42 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
         "metadata and references"
     ]
 
-    logging.info("Đang khởi tạo AI Pipeline (HuggingFace Zero-shot)...")
-    logging.info("Mô hình được chọn: 'facebook/bart-large-mnli'")
+    logging.info("[Classifier] Initializing Zero-shot AI Pipeline (HuggingFace)...")
+    logging.info("[Classifier] Selected model architecture: 'facebook/bart-large-mnli'")
     
-    logging.info("Đang khởi tạo mô hình Zero-shot: facebook/bart-large-mnli")
-    
-    # Auto-detect GPU/CPU
+    # Auto-detect CPU/GPU
     try:
         import torch
         device = 0 if torch.cuda.is_available() else -1
     except ImportError:
         device = -1
-    logging.info(f"Device: {'GPU (CUDA)' if device == 0 else 'CPU'}")
+    logging.info(f"[Classifier] Hardware accelerator deployed: {'GPU (CUDA)' if device == 0 else 'CPU'}")
     
     classifier = pipeline(
         "zero-shot-classification", 
         model="facebook/bart-large-mnli",
         device=device
     )
-    logging.info("Khởi tạo mô hình thành công.")
+    logging.info("[Classifier] AI Inference pipeline loaded successfully.")
 
-    for file_path in chunk_files:
-        file_name = os.path.basename(file_path)
-        output_file_path = os.path.join(output_dir, file_name)
+    for obj in chunk_objects:
+        object_name = obj.object_name
+        file_name = os.path.basename(object_name)
+        output_object_name = f"chunks/{file_name}"
         
-        if os.path.exists(output_file_path):
-            logging.info(f"Bỏ qua file đã xử lý: {file_name}")
+        if is_object_exists(client, DEST_BUCKET, output_object_name):
+            logging.info(f"  -> [Idempotency] Labeled array exists, skipping: {output_object_name}")
             continue
 
-        logging.info(f"Đang xử lý: {file_name}")
+        logging.info(f"[Classifier] Executing semantic inference for document: {file_name}")
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                chunks = json.load(f)
+            # Gắp Structured context kéo về RAM xử lý in-memory
+            response = client.get_object(SOURCE_BUCKET, object_name)
+            chunks = json.loads(response.read().decode('utf-8'))
+            response.close()
+            response.release_conn()
             
-            # Lọc chunks hợp lệ trước khi classify
+            # Pre-filter dọn dẹp các chunk quá ngắn trước khi ném vào Execution
             valid_chunks = []
             valid_contents = []
             for chunk in chunks:
@@ -84,13 +129,12 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
                     valid_contents.append(content)
             
             if not valid_contents:
-                logging.warning(f"Không có chunk hợp lệ trong {file_name}")
+                logging.warning(f"  -> [Filter] No logically coherent chunks found in {file_name}")
                 continue
             
             total_chunks = len(valid_contents)
-            logging.info(f"  {total_chunks} chunks hợp lệ. Bắt đầu batch inference...")
+            logging.info(f"  -> Valid chunks: {total_chunks}. Commencing batch processing sequence...")
             
-            # Batch inference: gửi toàn bộ nội dung cùng lúc thay vì từng cái một
             BATCH_SIZE = 16
             classified_chunks = []
             
@@ -107,7 +151,6 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
                     batch_size=BATCH_SIZE
                 )
                 
-                # Nếu batch chỉ có 1 phần tử, pipeline trả về dict thay vì list
                 if isinstance(results, dict):
                     results = [results]
                 
@@ -128,22 +171,33 @@ def classify_chunks_layer(input_dir: str, output_dir: str):
                     chunk["quality_tier"] = quality_tier
                     classified_chunks.append(chunk)
                 
-                logging.info(f"  Batch {batch_start+1}-{batch_end}/{total_chunks} hoàn tất.")
+                logging.info(f"  -> [Inference] Batch segment {batch_start+1}-{batch_end}/{total_chunks} processed.")
 
-            # Ghi ra file JSON
-            with open(output_file_path, 'w', encoding='utf-8') as f:
-                json.dump(classified_chunks, f, ensure_ascii=False, indent=2)
+            # Upload annotated payload vào MinIO
+            json_bytes = json.dumps(classified_chunks, ensure_ascii=False, indent=2).encode('utf-8')
+            json_stream = io.BytesIO(json_bytes)
+            
+            client.put_object(
+                DEST_BUCKET,
+                output_object_name,
+                data=json_stream,
+                length=len(json_bytes),
+                content_type="application/json"
+            )
 
-            logging.info(f"Hoàn tất: {file_name} ({len(classified_chunks)} chunks).")
+            logging.info(f"  -> [Classifier] Classification accomplished. Linked {len(classified_chunks)} chunks to s3://{DEST_BUCKET}/{output_object_name}")
 
         except Exception as e:
-            logging.error(f"Lỗi xử lý file {file_name}: {e}")
+            logging.error(f"[Classifier] Critical inference failure for document '{file_name}': {e}")
 
 if __name__ == "__main__":
-    test_base_dir = 'test_data'
-    input_cleaned_dir = os.path.join(test_base_dir, 'cleaned', 'chunks')
-    output_classified_dir = setup_classified_directories(test_base_dir)
+    logging.info("=========================================")
+    logging.info("[System] STARTING CLASSIFICATION LAYER")
+    logging.info("=========================================")
     
-    logging.info("BẮT ĐẦU LAYER PHÂN LOẠI (CLASSIFICATION)")
-    classify_chunks_layer(input_dir=input_cleaned_dir, output_dir=output_classified_dir)
-    logging.info("Layer Phân loại kết thúc.")
+    minio_client = get_minio_client()
+    setup_minio_buckets(minio_client)
+    
+    classify_chunks_layer(client=minio_client)
+    
+    logging.info("[System] Classification pipeline execution completed.")

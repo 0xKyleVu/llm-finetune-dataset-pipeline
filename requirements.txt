@@ -1,29 +1,10 @@
-# --- INGESTION LAYER ---
-arxiv==2.1.0
-certifi
-
-# --- STORAGE LAYER (ON-PREM) ---
 minio
-
-# --- PROCESSING / TRANSFORMATION LAYER (PDF to Text) ---
+arxiv
 docling
-docling-core
-
-# --- PARSING & CHUNKING LAYER ---
-langchain
-langchain-community
 langchain-text-splitters
-
-# --- CLEANING & DEDUP LAYER ---
-ftfy
-
-# --- CATEGORIZATION & LLM AGENT LAYER ---
-ollama
 transformers
 torch
-accelerate
-pydantic
-
-# --- DATA STORE & OUTPUT LAYER ---
-pandas
+ftfy
 duckdb
+ollama
+pydantic
