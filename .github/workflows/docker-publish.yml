@@ -27,7 +27,9 @@ jobs:
       - name: Lint with ruff
         run: ruff check .
       - name: Run tests
-        run: pytest tests/
+        env:
+          PYTHONPATH: .
+        run: python -m pytest tests/
 
   build-and-push:
     needs: test
