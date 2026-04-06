@@ -8,3 +8,6 @@ ftfy
 duckdb
 ollama
 pydantic
+watchdog
+dagster
+dagster-webserver

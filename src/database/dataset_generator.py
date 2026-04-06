@@ -7,6 +7,7 @@ import duckdb
 import json
 import logging
 import io
+import hashlib
 from pydantic import BaseModel
 from ollama import AsyncClient
 from minio import Minio
@@ -31,6 +32,7 @@ MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 MODEL_NAME = "llama3.2"
 SOURCE_BUCKET = "classified-data"
 DEST_BUCKET = "finetune-data"
+CACHE_BUCKET = "generated-qas"
 OUTPUT_OBJECT = "dataset/finetune_dataset.jsonl"
 MIN_TEXT_LENGTH = 200
 MAX_CONCURRENT = 2
@@ -65,16 +67,21 @@ def get_minio_client() -> Minio:
     )
 
 def setup_minio_buckets(client: Minio):
-    """Đảm bảo Bucket đích tồn tại trên MinIO."""
-    try:
-        if not client.bucket_exists(DEST_BUCKET):
-            client.make_bucket(DEST_BUCKET)
-            logging.info(f"[Initialization] Created destination bucket: s3://{DEST_BUCKET}")
-        else:
-            logging.info(f"[Initialization] Destination bucket ready: s3://{DEST_BUCKET}")
-    except S3Error as e:
-        logging.error(f"[Initialization] MinIO Server error: {e}")
-        raise
+    """Đảm bảo các Bucket đích và cache tồn tại trên MinIO."""
+    for bucket in [DEST_BUCKET, CACHE_BUCKET]:
+        try:
+            if not client.bucket_exists(bucket):
+                client.make_bucket(bucket)
+                logging.info(f"[Initialization] Created bucket: s3://{bucket}")
+            else:
+                logging.info(f"[Initialization] Bucket ready: s3://{bucket}")
+        except S3Error as e:
+            logging.error(f"[Initialization] MinIO Server error for {bucket}: {e}")
+            raise
+
+def get_content_hash(text: str) -> str:
+    """Tạo mã MD5 hash duy nhất cho mỗi đoạn văn bản."""
+    return hashlib.md5(text.encode('utf-8')).hexdigest()
 
 def is_noise_chunk(text: str) -> bool:
     """
@@ -159,6 +166,23 @@ TASK: {task_instruction}
 FORMAT: Output a single JSON with 'instruction' (the question) and 'output' (the expert answer).
 RULES: English only. Strictly based on the excerpt and paper context.
 """
+    
+    # Logic Cache: Kiểm tra xem hash này đã có kết quả chưa
+    content_hash = get_content_hash(content)
+    cache_path = f"{content_hash}.json"
+    minio_client = get_minio_client()
+    
+    try:
+        # Nếu đã có cache, bốc thẳng từ MinIO
+        response = minio_client.get_object(CACHE_BUCKET, cache_path)
+        cached_data = json.loads(response.read().decode('utf-8'))
+        response.close()
+        response.release_conn()
+        logging.info(f"  -> [Cache Hit] Skipping AI for hash: {content_hash}")
+        return cached_data
+    except S3Error as e:
+        if e.code != "NoSuchKey":
+            logging.error(f"[Cache] Error checking hit: {e}")
 
     async with semaphore:
         logging.info(f"[Generator] Instructing sequence [{idx}/{total}] [{question_type}]: {row['category']}")
@@ -194,7 +218,8 @@ RULES: English only. Strictly based on the excerpt and paper context.
                     return None
 
             logging.info(f"  -> [Verified] Generated logic: {instruction[:60]}...")
-            return {
+            
+            result = {
                 "source_paper_id": row['paper_id'],
                 "clean_text": content,
                 "category": row['category'],
@@ -204,6 +229,21 @@ RULES: English only. Strictly based on the excerpt and paper context.
                     "output": output
                 }
             }
+
+            # Lưu vào Cache cho lần sau
+            try:
+                res_bytes = json.dumps(result, ensure_ascii=False).encode('utf-8')
+                minio_client.put_object(
+                    CACHE_BUCKET,
+                    cache_path,
+                    data=io.BytesIO(res_bytes),
+                    length=len(res_bytes),
+                    content_type="application/json"
+                )
+            except Exception as cache_err:
+                logging.error(f"  -> [Cache] Failed to save result: {cache_err}")
+
+            return result
 
         except Exception as e:
             logging.error(f"[Generator] Execution fault at process row {idx}: {e}")

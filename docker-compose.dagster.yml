@@ -1,0 +1,53 @@
+services:
+  dagster_webserver:
+    build: .
+    container_name: arxiv_dagster_webserver
+    command: >
+      bash -c "dagster-webserver -h 0.0.0.0 -p 3000 -w workspace.yaml"
+    environment:
+      - DAGSTER_HOME=/opt/dagster/dagster_home
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - OLLAMA_HOST=${OLLAMA_HOST}
+    volumes:
+      - ./src:/app/src
+      - ./workspace.yaml:/app/workspace.yaml
+      - ./dagster_home:/opt/dagster/dagster_home
+      - ./showcase:/app/showcase
+    ports:
+      - "3000:3000"
+    networks:
+      - arxiv_network
+
+  dagster_daemon:
+    build: .
+    container_name: arxiv_dagster_daemon
+    command: >
+      bash -c "dagster-daemon run"
+    environment:
+      - DAGSTER_HOME=/opt/dagster/dagster_home
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - OLLAMA_HOST=${OLLAMA_HOST}
+    volumes:
+      - ./src:/app/src
+      - ./workspace.yaml:/app/workspace.yaml
+      - ./dagster_home:/opt/dagster/dagster_home
+      - ./hot_folder:/app/hot_folder
+      - ./showcase:/app/showcase
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - arxiv_network
+
+networks:
+  arxiv_network:
+    external: true
+    name: llmdetask_default

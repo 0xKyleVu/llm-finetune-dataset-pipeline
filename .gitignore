@@ -1,40 +1,36 @@
-# Python Cache
+# Python
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Virtual Environments
-.venv/
-venv/
+*.pyc
+*.pyo
+*.pyd
+.Python
 env/
-ENV/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.toast
+*.swp
+*.swo
 
-# Data
-data/
-test_data/
-!test_data/*.jsonl
-*.pdf
-*.json
-*.duckdb
-*.parquet
+# Dagster
+dagster_home/
+storage/
+*.dagster
 
-# Script tạm thời
-tmp_*.py
-
-# Storage config có credentials
-src/storage/minio_sync.py
-
-# Cấu hình IDE 
-.vscode/
-.idea/
-.gemini/
-
-# File local
+# Environment & Secrets
 .env
-src/pipeline.py
-implementation_plan.md
-task.md
-Walkthrough.md
+.venv/
+auth.json
 
-context/
-*.docx
+# Project specific junk
+*.err
+*.out
+*.complete
+.DS_Store
+Thumbs.db
+
+# Data folders
+hot_folder/*
+!hot_folder/.gitkeep
+context/*
