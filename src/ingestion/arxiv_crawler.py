@@ -70,8 +70,8 @@ def crawl_arxiv_papers(client: Minio, query: str, max_results: int = 10):
     """
     logging.info(f"[Ingestion] Commencing search query: '{query}', max results: {max_results}")
     
-    # Khởi tạo client ArXiv kèm cơ chế chờ (delay) để tránh chặn Rate limit
-    arxiv_client = arxiv.Client(page_size=max_results, delay_seconds=5, num_retries=5)
+    # Increase delay and retries to be more conservative and avoid HTTP 429/503
+    arxiv_client = arxiv.Client(page_size=max_results, delay_seconds=10, num_retries=10)
     search = arxiv.Search(
         query=query,
         max_results=max_results,

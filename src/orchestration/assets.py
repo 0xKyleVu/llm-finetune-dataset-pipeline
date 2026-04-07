@@ -28,10 +28,17 @@ def arxiv_raw_data(context: AssetExecutionContext):
     ]
     
     for query in topic_queries:
-        context.log.info(f"Crawl Topic: {query}")
-        crawl_arxiv_papers(client, query=query, max_results=5)
-        context.log.info("Rate limit safeguard engaged. Pausing execution for 5 seconds...")
-        time.sleep(5)
+        try:
+            context.log.info(f"Crawl Topic: {query}")
+            crawl_arxiv_papers(client, query=query, max_results=5)
+            # Increase standard pause between topics to 10 seconds
+            context.log.info("Rate limit safeguard engaged. Pausing execution for 10 seconds...")
+            time.sleep(10)
+        except Exception as e:
+            # If a topic fails (usually due to 429/503), log a warning and wait longer
+            context.log.warning(f"ArXiv request failed for topic {query}: {e}")
+            context.log.info("Potential rate limit or server issue. Cooling down for 60 seconds...")
+            time.sleep(60)
     
     context.log.info("ArXiv Raw Data Asset Materialized for all topics.")
 

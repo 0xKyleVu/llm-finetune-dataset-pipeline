@@ -19,7 +19,7 @@ The following diagram illustrates the high-level architecture and data flow of t
 
 ## ✨ Key Features
 
-- **Multi-topic Crawling**: Deep crawling across various foundational domains (AI/ML, Cryptography, Quant Finance, etc.) featuring a smart rate-limiting mechanism to comply with ArXiv API limits.
+- **Multi-topic Crawling**: Deep crawling across various foundational domains (AI/ML, Cryptography, Quant Finance, etc.) featuring a **Resilient Ingestion Engine** with adaptive throttling and automatic retries (Backoff) to strictly comply with ArXiv API limits.
 - **Advanced PDF Parsing**: Utilizes `Docling` for in-depth structural document extraction, automatically identifying tables, columns, and academic structural components.
 - **Semantic Chunking**: Segments document content based on actual semantics rather than mechanical character counts, preserving the academic context.
 - **Data Filtering & Cleaning**: Dedicated modules to clean and remove non-informative content (like citations and bibliographies) and automatically classify texts into quality tiers.
