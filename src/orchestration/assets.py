@@ -13,11 +13,27 @@ logging.basicConfig(level=logging.INFO)
 
 @asset(group_name="arxiv_pipeline")
 def arxiv_raw_data(context: AssetExecutionContext):
-    """Bước 1: Cào dữ liệu PDF và Metadata từ ArXiv."""
+    """Bước 1: Cào dữ liệu PDF và Metadata từ ArXiv với đầy đủ các chủ đề."""
+    import time
     client = crawler_minio()
     setup_raw(client)
-    crawl_arxiv_papers(client, query="cat:cs.AI", max_results=10)
-    context.log.info("ArXiv Raw Data Asset Materialized.")
+    
+    topic_queries = [
+        "cat:cs.AI", "cat:cs.LG",           # 1. AI/ML
+        "cat:cs.CR",                        # 2. Cryptography
+        "cat:cs.IT", "cat:cs.NI",           # 3. Network & Info Theory
+        "cat:eess.SY", "cat:eess.SP",       # 4. Signal Processing
+        "cat:q-fin.GN", "cat:q-fin.CP",     # 5. Quant Finance
+        "all:military OR all:defense"       # 6. Defense
+    ]
+    
+    for query in topic_queries:
+        context.log.info(f"Crawl Topic: {query}")
+        crawl_arxiv_papers(client, query=query, max_results=5)
+        context.log.info("Rate limit safeguard engaged. Pausing execution for 5 seconds...")
+        time.sleep(5)
+    
+    context.log.info("ArXiv Raw Data Asset Materialized for all topics.")
 
 @asset(deps=[arxiv_raw_data], group_name="arxiv_pipeline")
 def parsed_markdown(context: AssetExecutionContext):
