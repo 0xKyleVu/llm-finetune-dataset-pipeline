@@ -83,15 +83,30 @@ def finetune_dataset(context: AssetExecutionContext):
 @asset(deps=[finetune_dataset], group_name="arxiv_pipeline")
 def latest_dataset_showcase(context: AssetExecutionContext):
     """Bước 7: Xuất dữ liệu mới nhất ra thư mục showcase để commit lên GitHub."""
+    import subprocess
     client = crawler_minio()
     bucket = "finetune-data"
     obj_name = "dataset/finetune_dataset.jsonl"
-    # Đường dẫn trong container (đã được mount ra showcase/ trên host)
-    dest_path = "/app/showcase/latest_dataset.jsonl"
+    
+    # Xác định đường dẫn gốc
+    current_file_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(current_file_dir, "..", ".."))
+    dest_path = os.path.join(project_root, "showcase", "latest_dataset.jsonl")
+    
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
     
     try:
+        # Tải file từ MinIO
         client.fget_object(bucket, obj_name, dest_path)
         context.log.info(f"Successfully exported {obj_name} to {dest_path}")
+        
+        # Git Add
+        try:
+            subprocess.run(["git", "add", dest_path], check=True, cwd=project_root)
+            context.log.info(f"Auto-staged {dest_path} for Git commit.")
+        except Exception as git_err:
+            context.log.warning(f"Git add failed (check if git is installed and path is correct): {git_err}")
+            
     except Exception as e:
         context.log.error(f"Failed to export showcase dataset: {e}")
         raise e
