@@ -4,6 +4,7 @@ import logging
 import io
 from minio import Minio
 from minio.error import S3Error
+from collections import defaultdict
 from transformers import pipeline
 
 # Cấu hình Global Logging
@@ -189,6 +190,122 @@ def classify_chunks_layer(client: Minio):
 
         except Exception as e:
             logging.error(f"[Classifier] Critical inference failure for document '{file_name}': {e}")
+
+    # Sau khi phân loại xong toàn bộ, trả về báo cáo thống kê
+    return generate_classification_report(client)
+
+
+def generate_classification_report(client: Minio) -> dict:
+    """
+    Quét toàn bộ dữ liệu đã phân loại trong MinIO và trả về báo cáo thống kê.
+
+    Returns:
+        dict: Chứa category_counts, tier_counts, confidence_by_label,
+              total_chunks, usable_pct, overall_conf, status.
+              Trả về None nếu không có dữ liệu.
+
+    Cách đọc kết quả:
+    - High Tier > 60%: Hệ thống đang hoạt động tốt, dữ liệu rất sạch.
+    - Avg Confidence > 0.7: Model có độ chắc chắn cao, kết quả đáng tin cậy.
+    - Avg Confidence < 0.5 cho một nhãn: Nhãn đó có thể bị nhầm lẫn, cần xem xét lại.
+    """
+    logging.info("\n" + "=" * 60)
+    logging.info("  CLASSIFICATION REPORT")
+    logging.info("=" * 60)
+
+    try:
+        obj_list = list(client.list_objects(DEST_BUCKET, prefix="chunks/"))
+    except S3Error as e:
+        logging.error(f"[Report] Failed to access classified bucket: {e}")
+        return
+
+    if not obj_list:
+        logging.warning("[Report] No classified data found.")
+        return
+
+    # Thu thập dữ liệu từ tất cả các file đã phân loại
+    category_counts = defaultdict(int)
+    tier_counts = defaultdict(int)
+    # confidence_scores[label] = [score1, score2, ...]
+    confidence_by_label = defaultdict(list)
+    total_chunks = 0
+
+    for obj in obj_list:
+        try:
+            response = client.get_object(DEST_BUCKET, obj.object_name)
+            chunks = json.loads(response.read().decode('utf-8'))
+            response.close()
+            response.release_conn()
+
+            for chunk in chunks:
+                category = chunk.get("category", "unknown")
+                tier = chunk.get("quality_tier", "unknown")
+                score = chunk.get("confidence_score", 0.0)
+
+                category_counts[category] += 1
+                tier_counts[tier] += 1
+                confidence_by_label[category].append(score)
+                total_chunks += 1
+
+        except Exception as e:
+            logging.warning(f"[Report] Could not read {obj.object_name}: {e}")
+            continue
+
+    if total_chunks == 0:
+        logging.warning("[Report] No chunks found in classified data.")
+        return
+
+    # --- PHẦN 1: Phân bổ chủ đề ---
+    logging.info(f"\n  [1/3] CATEGORY DISTRIBUTION (Total: {total_chunks} chunks)")
+    logging.info("  " + "-" * 50)
+    for label, count in sorted(category_counts.items(), key=lambda x: -x[1]):
+        pct = count / total_chunks * 100
+        bar = "█" * int(pct / 2)  # Thanh tiến trình ASCII
+        avg_conf = sum(confidence_by_label[label]) / len(confidence_by_label[label])
+        logging.info(f"  {label:<30} {count:>5} ({pct:5.1f}%)  conf_avg: {avg_conf:.3f}  {bar}")
+
+    # --- PHẦN 2: Phân bổ Quality Tier ---
+    logging.info(f"\n  [2/3] QUALITY TIER DISTRIBUTION")
+    logging.info("  " + "-" * 50)
+    tier_order = ["High", "Medium", "Low"]
+    for tier in tier_order:
+        count = tier_counts.get(tier, 0)
+        pct = count / total_chunks * 100
+        bar = "█" * int(pct / 2)
+        logging.info(f"  {tier:<10} {count:>5} ({pct:5.1f}%)  {bar}")
+
+    usable_pct = (tier_counts.get("High", 0) + tier_counts.get("Medium", 0)) / total_chunks * 100
+    logging.info(f"\n  => Usable data (High + Medium): {usable_pct:.1f}%")
+
+    # --- PHẦN 3: Đánh giá sức khỏe ---
+    overall_conf = sum(s for scores in confidence_by_label.values() for s in scores) / total_chunks
+    logging.info(f"\n  [3/3] OVERALL CONFIDENCE SCORE: {overall_conf:.4f}")
+    if overall_conf >= 0.7:
+        logging.info("  => STATUS: EXCELLENT - Model is highly confident in classifications.")
+    elif overall_conf >= 0.5:
+        logging.info("  => STATUS: ACCEPTABLE - Some ambiguous chunks exist, review 'Low' tier.")
+    else:
+        logging.info("  => STATUS: WARNING - Low confidence. Consider refining candidate labels.")
+
+    logging.info("\n" + "=" * 60 + "\n")
+
+    # Trả về dữ liệu thống kê để Dagster asset có thể hiển thị trên UI
+    if overall_conf >= 0.7:
+        status = "EXCELLENT"
+    elif overall_conf >= 0.5:
+        status = "ACCEPTABLE"
+    else:
+        status = "WARNING"
+
+    return {
+        "total_chunks": total_chunks,
+        "category_counts": dict(category_counts),
+        "tier_counts": dict(tier_counts),
+        "confidence_by_label": {k: round(sum(v)/len(v), 4) for k, v in confidence_by_label.items()},
+        "usable_pct": round(usable_pct, 2),
+        "overall_conf": round(overall_conf, 4),
+        "status": status,
+    }
 
 if __name__ == "__main__":
     logging.info("=========================================")

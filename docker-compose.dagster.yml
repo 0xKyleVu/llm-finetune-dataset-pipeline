@@ -9,7 +9,7 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - OLLAMA_HOST=${OLLAMA_HOST}
+      - OLLAMA_HOST=http://host.docker.internal:11434
     volumes:
       - ./src:/app/src
       - ./workspace.yaml:/app/workspace.yaml
@@ -30,7 +30,7 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - OLLAMA_HOST=${OLLAMA_HOST}
+      - OLLAMA_HOST=http://host.docker.internal:11434
     volumes:
       - ./src:/app/src
       - ./workspace.yaml:/app/workspace.yaml

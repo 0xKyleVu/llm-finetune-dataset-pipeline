@@ -35,7 +35,8 @@ DEST_BUCKET = "finetune-data"
 CACHE_BUCKET = "generated-qas"
 OUTPUT_OBJECT = "dataset/finetune_dataset.jsonl"
 MIN_TEXT_LENGTH = 200
-MAX_CONCURRENT = 2
+MAX_CONCURRENT = 3 
+MAX_SAMPLES_PER_CATEGORY = 100
 
 # Top-level dạng regex nhận diện rác academic 
 _CITATION_MARKERS = re.compile(
@@ -187,14 +188,18 @@ RULES: English only. Strictly based on the excerpt and paper context.
     async with semaphore:
         logging.info(f"[Generator] Instructing sequence [{idx}/{total}] [{question_type}]: {row['category']}")
         try:
-            response = await client.chat(
-                model=MODEL_NAME,
-                messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt}
-                ],
-                format=FinetuneSample.model_json_schema(),
-                options={'temperature': 0.3}
+            logging.info(f"  -> [Awaiting AI] Sequence {idx} is being processed by llama3.2...")
+            response = await asyncio.wait_for(
+                client.chat(
+                    model=MODEL_NAME,
+                    messages=[
+                        {'role': 'system', 'content': system_prompt},
+                        {'role': 'user', 'content': user_prompt}
+                    ],
+                    format=FinetuneSample.model_json_schema(),
+                    options={'temperature': 0.3}
+                ),
+                timeout=120.0
             )
 
             raw_response = json.loads(response.message.content)
@@ -245,14 +250,24 @@ RULES: English only. Strictly based on the excerpt and paper context.
 
             return result
 
+        except ConnectionError as e:
+            logging.error(f"[Generator] Connection refused by Ollama: {e}")
+            raise RuntimeError(f"Ollama Connection Error: {e}")
+        except asyncio.TimeoutError:
+            logging.warning(f"  -> [Timeout] Ollama took too long to respond on sequence {idx}. Skipping.")
+            return None
         except Exception as e:
-            logging.error(f"[Generator] Execution fault at process row {idx}: {e}")
+            logging.error(f"  -> [Error] Local execution fault at process row {idx}: {e}")
             return None
 
 async def generate_finetune_data():
     """
     Hệ thống Orchestrator trung tâm nối các cục LLM API cắm vào Cloud-Native Data Bucket thẳng tắp.
     """
+    # Khởi tạo Bucket ngay từ đầu để Cache có chỗ lưu
+    minio_client = get_minio_client()
+    setup_minio_buckets(minio_client)
+
     logging.info("[Initialization] Establishing DuckDB HTTPFS engine...")
     con = duckdb.connect(':memory:')
     con.execute("INSTALL httpfs;")
@@ -271,32 +286,44 @@ async def generate_finetune_data():
     logging.info(f"[DB] Executing distributed HTTPFS query targeting s3://{SOURCE_BUCKET}...")
 
     query = f"""
-        SELECT 
-            c.content as clean_text,
-            c.category as category,
-            c.paper_id as paper_id,
-            m.title as title,
-            m.summary as summary
-        FROM read_json_auto('s3://{SOURCE_BUCKET}/chunks/*.json') c
-        JOIN read_json_auto('s3://raw-data/metadata/*.json') m
-          ON c.paper_id = m.id
-        WHERE c.quality_tier IN ('High', 'Medium') 
-        AND length(c.content) > {MIN_TEXT_LENGTH}
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY c.content ORDER BY c.quality_tier) = 1
-        ORDER BY c.category, length(c.content) DESC
-        LIMIT 500
+        WITH Deduplicated AS (
+            SELECT 
+                c.content as clean_text,
+                c.category as category,
+                c.paper_id as paper_id,
+                m.title as title,
+                m.summary as summary,
+                ROW_NUMBER() OVER (PARTITION BY c.content ORDER BY c.quality_tier) as rn
+            FROM read_json_auto('s3://{SOURCE_BUCKET}/chunks/*.json') c
+            JOIN read_json_auto('s3://raw-data/metadata/*.json') m
+              ON c.paper_id = m.id
+            WHERE c.quality_tier IN ('High', 'Medium') 
+            AND length(c.content) > {MIN_TEXT_LENGTH}
+        ),
+        Sampled AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (PARTITION BY category ORDER BY random()) as cat_rn
+            FROM Deduplicated
+            WHERE rn = 1
+        )
+        SELECT clean_text, category, paper_id, title, summary 
+        FROM Sampled
+        WHERE cat_rn <= {MAX_SAMPLES_PER_CATEGORY}
+        ORDER BY category, length(clean_text) DESC
     """
 
     try:
         rows = con.execute(query).df().to_dict('records')
         logging.info(f"[DB] Retrieved {len(rows)} qualified records combined with architectural metadata.")
+        if not rows:
+            raise ValueError("[DB] The query returned 0 rows. DuckDB could not join chunks and metadata, or no high/medium chunks met the threshold.")
     except Exception as e:
         logging.error(f"[DB] Data query operation denied from MinIO: {e}")
-        return
+        raise e
 
     logging.info(f"[Generator] Initializing LLM cluster ({MODEL_NAME}) with concurrency level: {MAX_CONCURRENT}")
     
-    # Lấy địa chỉ Ollama từ biến môi trường (mặc định là localhost nếu chạy ngoài Docker)
+    # Lấy địa chỉ Ollama từ biến môi trường
     ollama_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     logging.info(f"[Generator] Connecting to Ollama at: {ollama_url}")
     
@@ -313,8 +340,9 @@ async def generate_finetune_data():
     records = [r for r in results if r is not None]
     
     if not records:
-        logging.warning("[Generator] Synchronization yielded zero valid synthetic sequences. Process terminated.")
-        return
+        error_msg = "[Generator] Synchronization yielded zero valid synthetic sequences. Process terminated."
+        logging.error(error_msg)
+        raise ValueError(error_msg)
 
     logging.info(f"[Pipeline] Acquired {len(records)} robust sequences. Finalizing cloud deployment...")
     
@@ -323,9 +351,7 @@ async def generate_finetune_data():
     jsonl_bytes = jsonl_output.encode('utf-8')
     jsonl_stream = io.BytesIO(jsonl_bytes)
     
-    minio_client = get_minio_client()
-    setup_minio_buckets(minio_client)
-    
+    # Bucket đã được khởi tạo từ đầu hàm
     try:
         minio_client.put_object(
             DEST_BUCKET,
@@ -335,8 +361,10 @@ async def generate_finetune_data():
             content_type="application/jsonlines"
         )
         logging.info(f"[IO] JSONL fine-tuning dataset deployed successfully to s3://{DEST_BUCKET}/{OUTPUT_OBJECT}")
+        return len(records)
     except Exception as e:
         logging.error(f"[IO] Buffer flush failed during MinIO upload sequence: {e}")
+        raise e
 
 if __name__ == "__main__":
     logging.info("=========================================")
